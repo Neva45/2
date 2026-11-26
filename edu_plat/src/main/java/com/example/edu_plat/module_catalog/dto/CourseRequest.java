@@ -25,8 +25,4 @@ public class CourseRequest {
 
     public BigDecimal getPrice() { return price; }
     public void setPrice(BigDecimal price) { this.price = price; }
-
-    // Геттеры и сеттеры для обратной совместимости внутри бэкенда
-    public String getDescription() { return this.summary; }
-    public void setDescription(String description) { this.summary = description; }
 }

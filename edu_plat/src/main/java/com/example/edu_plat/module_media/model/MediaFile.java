@@ -1,6 +1,7 @@
 package com.example.edu_plat.module_media.model;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "media_files")
@@ -10,31 +11,40 @@ public class MediaFile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "storage_name", nullable = false, unique = true)
-    private String storageName;
+    @Column(name = "server_file_name", nullable = false)
+    private String serverFileName;
 
-    @Column(name = "original_name", nullable = false)
+    @Column(name = "mime_type", nullable = false)
+    private String mimeType;
+
+    @Column(nullable = false)
+    private Long size;
+
+    @Column(name = "original_name")
     private String originalName;
 
-    @Column(name = "content_type", nullable = false)
-    private String contentType;
+    @Column(name = "uploaded_at")
+    private LocalDateTime uploadedAt = LocalDateTime.now();
 
-    @Column(name = "file_size", nullable = false)
-    private Long fileSize;
+    // Пустой конструктор
+    public MediaFile() {}
 
-    // Getters and Setters
+    // --- Геттеры и сеттеры ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
-    public String getStorageName() { return storageName; }
-    public void setStorageName(String storageName) { this.storageName = storageName; }
+    public String getServerFileName() { return serverFileName; }
+    public void setServerFileName(String serverFileName) { this.serverFileName = serverFileName; }
+
+    public String getMimeType() { return mimeType; }
+    public void setMimeType(String mimeType) { this.mimeType = mimeType; }
+
+    public Long getSize() { return size; }
+    public void setSize(Long size) { this.size = size; }
 
     public String getOriginalName() { return originalName; }
     public void setOriginalName(String originalName) { this.originalName = originalName; }
 
-    public String getContentType() { return contentType; }
-    public void setContentType(String contentType) { this.contentType = contentType; }
-
-    public Long getFileSize() { return fileSize; }
-    public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+    public LocalDateTime getUploadedAt() { return uploadedAt; }
+    public void setUploadedAt(LocalDateTime uploadedAt) { this.uploadedAt = uploadedAt; }
 }

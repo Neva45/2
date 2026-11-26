@@ -15,11 +15,6 @@ public class Course {
     @Column(nullable = false)
     private String title;
 
-    // Оставляем старое поле для совместимости со старой версией приложения
-    @Column(columnDefinition = "TEXT")
-    private String description;
-
-    // Добавляем новое поле summary
     @Column(columnDefinition = "TEXT")
     private String summary;
 
@@ -35,30 +30,17 @@ public class Course {
     @Version
     private Long version;
 
-    // Геттеры и сеттеры
+    // --- Стандартные геттеры и сеттеры ---
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
 
-    // Умный геттер для description (если старая версия записала только туда)
-    public String getDescription() { 
-        return this.description != null ? this.description : this.summary; 
-    }
-    public void setDescription(String description) { 
-        this.description = description; 
-        this.summary = description; // Дублируем запись для новой версии
-    }
-
-    // Умный геттер для summary
-    public String getSummary() { 
-        return this.summary != null ? this.summary : this.description; 
-    }
-    public void setSummary(String summary) { 
-        this.summary = summary; 
-        this.description = summary; // Дублируем запись для старой версии
-    }
+    // Теперь это обычный геттер и сеттер без "умной" логики
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
 
     public Long getTeacherId() { return teacherId; }
     public void setTeacherId(Long teacherId) { this.teacherId = teacherId; }

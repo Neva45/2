@@ -11,6 +11,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
@@ -71,7 +72,21 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ErrorResponse> build(HttpStatus status, String message) {
-        ErrorResponse error = new ErrorResponse(status.value(), status.getReasonPhrase(), message);
+    // Передаем только 2 аргумента, если в ErrorResponse только 2 поля
+        ErrorResponse error = new ErrorResponse(status.value(), message);
         return ResponseEntity.status(status).body(error);
+    }
+
+    // Обработка неправильного формата файла (возвращаем 400)
+    @ExceptionHandler(InvalidMediaFormatException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMediaFormat(InvalidMediaFormatException ex) {
+        ErrorResponse error = new ErrorResponse(HttpStatus.BAD_REQUEST.value(), ex.getMessage());
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxSizeException(MaxUploadSizeExceededException ex) {
+        ErrorResponse error = new ErrorResponse(HttpStatus.BAD_REQUEST.value(), "Файл слишком большой. Максимум 5 МиБ.");
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 }

@@ -83,7 +83,6 @@ public class CourseService {
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found with id: " + id));
 
         course.setTitle(request.getTitle());
-        course.setDescription(request.getDescription());
 
         Course updated = courseRepository.save(course);
         log.info("Course updated with pessimistic lock id={}", updated.getId());
@@ -104,7 +103,9 @@ public class CourseService {
         
         // Настройка пагинации со строгой последовательной сортировкой: сначала по price, затем по id
         Pageable pageable = PageRequest.of(
-            page, size, Sort.by("price").ascending().and(Sort.by("id").ascending())
+                page, size, 
+                Sort.by(Course::getPrice).ascending()
+                    .and(Sort.by(Course::getId).ascending())
         );
         
         Specification<Course> spec = CourseSpecifications.findByFilter(title, minPrice, maxPrice);

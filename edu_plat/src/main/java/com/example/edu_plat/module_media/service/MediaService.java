@@ -1,17 +1,17 @@
 package com.example.edu_plat.module_media.service;
 
-import com.example.edu_plat.exception.ResourceNotFoundException;
-import com.example.edu_plat.module_media.dto.MediaResponse;
+import com.example.edu_plat.exception.InvalidMediaFormatException;
+import com.example.edu_plat.module_media.dto.MediaResponse; // Убедись, что он у тебя есть
 import com.example.edu_plat.module_media.model.MediaFile;
 import com.example.edu_plat.module_media.repository.MediaFileRepository;
-import org.springframework.http.HttpStatus;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -21,122 +21,88 @@ import java.util.UUID;
 public class MediaService {
 
     private final MediaFileRepository mediaFileRepository;
-    private final Path rootLocation = Paths.get("upload-dir");
+    private final Path rootLocation = Paths.get("uploads");
 
     public MediaService(MediaFileRepository mediaFileRepository) {
         this.mediaFileRepository = mediaFileRepository;
-        try {
-            Files.createDirectories(rootLocation);
-        } catch (IOException e) {
-            throw new RuntimeException("Не удалось создать директорию для хранения файлов", e);
-        }
     }
 
-    // Аннотация гарантирует откат в БД, если сохранение метаданных упадет
-    @Transactional(rollbackFor = Exception.class)
-    public MediaResponse uploadFile(MultipartFile file) {
-        // 1. Валидация размера (5 МиБ)
-        long maxSizeBytes = 5 * 1024 * 1024;
-        if (file.getSize() > maxSizeBytes) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Размер файла превышает допустимые 5 МиБ");
+    @Transactional
+    public MediaFile upload(MultipartFile file) {
+        if (file.getSize() > 5 * 1024 * 1024) {
+            throw new InvalidMediaFormatException("Размер файла превышает 5 МиБ");
         }
-
-        // 2. Валидация формата по Magic Bytes
-        String contentType = detectMimeTypeByContent(file);
-        if (contentType == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Допустимы только форматы PNG, JPEG и WEBP");
-        }
-
-        String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null) originalFilename = "unknown";
-        
-        String fileExtension = getExtension(originalFilename);
-        String storageName = UUID.randomUUID().toString() + (fileExtension.isEmpty() ? "" : "." + fileExtension);
-        Path targetPath = this.rootLocation.resolve(storageName);
-
-        boolean fileSavedToDisk = false;
 
         try {
-            // 3. Пытаемся физически сохранить файл на диск
-            Files.copy(file.getInputStream(), targetPath);
-            fileSavedToDisk = true;
-
-            // 4. Запись метаданных в БД
-            MediaFile mediaFile = new MediaFile();
-            mediaFile.setStorageName(storageName);
-            mediaFile.setOriginalName(originalFilename);
-            mediaFile.setContentType(contentType);
-            mediaFile.setFileSize(file.getSize());
-
-            // saveAndFlush принудительно отправляет данные в Postgres прямо сейчас,
-            // чтобы поймать любые констреинты БД (например, дубликат unique ключа UUID)
-            MediaFile saved = mediaFileRepository.saveAndFlush(mediaFile);
-            return mapToResponse(saved);
-
-        } catch (Exception e) {
-            // 5. ОБРАБОТКА СБОЯ: если файл успел записаться на диск, но запись в БД
-            // выкинула ошибку — немедленно удаляем незавершенный файл с диска
-            if (fileSavedToDisk) {
-                try {
-                    Files.deleteIfExists(targetPath);
-                } catch (IOException ioException) {
-                    // Логируем, если файл заблокирован ОС
-                    System.err.println("Критическая ошибка: не удалось удалить мусорный файл " + targetPath);
-                }
-            }
+            byte[] bytes = file.getBytes();
+            String mimeType = detectMimeType(bytes);
             
-            // Пробрасываем ошибку дальше, чтобы Spring зафиксировал падение и откатил транзакцию в БД
-            if (e instanceof ResponseStatusException) {
-                throw (ResponseStatusException) e;
+            if (mimeType == null) {
+                throw new InvalidMediaFormatException("Неподдерживаемый формат. Разрешены только PNG, JPEG, WEBP.");
             }
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Ошибка при обработке и сохранении медиафайла", e);
+
+            String extension = mimeType.split("/")[1];
+            String serverFileName = UUID.randomUUID().toString() + "." + extension;
+
+            Files.createDirectories(rootLocation);
+            Path destinationFile = rootLocation.resolve(serverFileName);
+            Files.copy(file.getInputStream(), destinationFile);
+
+            MediaFile mediaFile = new MediaFile();
+            mediaFile.setServerFileName(serverFileName);
+            mediaFile.setMimeType(mimeType);
+            mediaFile.setSize(file.getSize());
+            mediaFile.setOriginalName(file.getOriginalFilename()); // Сохраняем оригинальное имя для истории
+
+            try {
+                return mediaFileRepository.save(mediaFile);
+            } catch (Exception e) {
+                Files.deleteIfExists(destinationFile); // Откат
+                throw new RuntimeException("Ошибка сохранения в БД, файл удален", e);
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException("Ошибка при чтении/сохранении файла", e);
         }
     }
 
-    @Transactional(readOnly = true)
+    // 1. Получение метаданных из БД
     public MediaFile getMetadata(Long id) {
         return mediaFileRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Файл не найден с id: " + id));
+                .orElseThrow(() -> new RuntimeException("Файл не найден"));
     }
 
-    @Transactional(readOnly = true)
-    public Path loadFile(String storageName) {
-        return rootLocation.resolve(storageName);
-    }
-
-    private String detectMimeTypeByContent(MultipartFile file) {
-        try (InputStream is = file.getInputStream()) {
-            byte[] header = new byte[12];
-            int read = is.read(header);
-            if (read < 4) return null;
-
-            if (header[0] == (byte) 0x89 && header[1] == (byte) 0x50 && header[2] == (byte) 0x4E && header[3] == (byte) 0x47) {
-                return "image/png";
+    // 2. Загрузка самого файла с диска
+    public Resource loadFile(String fileName) {
+        try {
+            Path file = rootLocation.resolve(fileName);
+            Resource resource = new UrlResource(file.toUri());
+            if (resource.exists() || resource.isReadable()) {
+                return resource;
+            } else {
+                throw new RuntimeException("Не удалось прочитать файл");
             }
-            if (header[0] == (byte) 0xFF && header[1] == (byte) 0xD8 && header[2] == (byte) 0xFF) {
-                return "image/jpeg";
-            }
-            if (read >= 12 && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
-                    && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P') {
-                return "image/webp";
-            }
-        } catch (IOException e) {
-            return null;
+        } catch (MalformedURLException e) {
+            throw new RuntimeException("Ошибка чтения файла", e);
         }
-        return null;
     }
 
-    private String getExtension(String filename) {
-        int index = filename.lastIndexOf('.');
-        return index == -1 ? "" : filename.substring(index + 1);
-    }
-
+    // 3. Маппинг в DTO для ответа
     public MediaResponse mapToResponse(MediaFile mediaFile) {
         MediaResponse response = new MediaResponse();
         response.setId(mediaFile.getId());
-        response.setOriginalName(mediaFile.getOriginalName());
-        response.setContentType(mediaFile.getContentType());
-        response.setFileSize(mediaFile.getFileSize());
+        response.setFileName(mediaFile.getServerFileName());
+        response.setMimeType(mediaFile.getMimeType());
+        response.setSize(mediaFile.getSize());
         return response;
+    }
+
+    private String detectMimeType(byte[] bytes) {
+        if (bytes.length < 12) return null;
+        if (bytes[0] == (byte) 0x89 && bytes[1] == (byte) 0x50 && bytes[2] == (byte) 0x4E && bytes[3] == (byte) 0x47) return "image/png";
+        if (bytes[0] == (byte) 0xFF && bytes[1] == (byte) 0xD8 && bytes[2] == (byte) 0xFF) return "image/jpeg";
+        if (bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F' &&
+            bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P') return "image/webp";
+        return null;
     }
 }

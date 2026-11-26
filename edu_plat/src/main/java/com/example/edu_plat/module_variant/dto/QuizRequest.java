@@ -34,10 +34,6 @@ public class QuizRequest {
     public Integer getPassingScore() { return passingScore; }
     public void setPassingScore(Integer passingScore) { this.passingScore = passingScore; }
 
-    // Обратная совместимость при переходе со старого поля passScore
-    public Integer getPassScore() { return this.passingScore; }
-    public void setPassScore(Integer passScore) { this.passingScore = passScore; }
-
     public List<QuestionDto> getQuestions() { return questions; }
     public void setQuestions(List<QuestionDto> questions) { this.questions = questions; }
 }
